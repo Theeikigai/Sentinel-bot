@@ -1,0 +1,50 @@
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('setup')
+    .setDescription('Setup the server with the bot features')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('all')
+        .setDescription('Setup the server with all features'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('custom')
+        .setDescription('Setup the server with custom features')
+        .addStringOption(option =>
+          option.setName('features')
+            .setDescription('Select features to setup')
+            .setRequired(true))),
+
+  async execute(interaction) {
+    const subCommand = interaction.options.getSubcommand();
+
+    if (subCommand === 'all') {
+      const embed = new EmbedBuilder()
+        .setTitle('Server Setup')
+        .setDescription('Setting up all features in your server...')
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+
+      // Call function to setup everything for the server
+      await setupAllServerFeatures(interaction.guild.id);  // Implement this function for server setup
+    }
+
+    if (subCommand === 'custom') {
+      const features = interaction.options.getString('features').split(',');
+      const embed = new EmbedBuilder()
+        .setTitle('Custom Server Setup')
+        .setDescription(`Setting up the following features: ${features.join(', ')}`)
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+
+      // Call function to setup custom features for the server
+      await setupCustomServerFeatures(interaction.guild.id, features);  // Implement this function
+    }
+  }
+};
