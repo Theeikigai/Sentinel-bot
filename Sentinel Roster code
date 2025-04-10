@@ -1,0 +1,26 @@
+const { SlashCommandBuilder, EmbedBuilder, ButtonBuilder, ActionRowBuilder } = require('discord.js');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('roster')
+    .setDescription('View and manage team rosters')
+    .addStringOption(option =>
+      option.setName('team')
+        .setDescription('Team name')
+        .setRequired(true)),
+
+  async execute(interaction) {
+    const team = interaction.options.getString('team');
+
+    // Fetch team data from your database here (this is a mock-up)
+    const players = ['Player 1', 'Player 2', 'Player 3']; // Replace with actual data
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${team} Roster`)
+      .setDescription(players.join('\n'))
+      .setColor(0x00AE86)
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+};
