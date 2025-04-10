@@ -1,32 +1,67 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('tournament')
-    .setDescription('Create a new tournament')
-    .addStringOption(option =>
-      option.setName('name')
-        .setDescription('Name of the tournament')
-        .setRequired(true))
-    .addIntegerOption(option =>
-      option.setName('max_participants')
-        .setDescription('Maximum participants (default 8, max 200)')
-        .setRequired(false))
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  
+    .setName('roster')
+    .setDescription('Manage team rosters')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('add')
+        .setDescription('Add a member to the roster')
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('User to add to the roster')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('remove')
+        .setDescription('Remove a member from the roster')
+        .addUserOption(option =>
+          option.setName('user')
+            .setDescription('User to remove from the roster')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('list')
+        .setDescription('List all members in the roster')),
+
   async execute(interaction) {
-    const name = interaction.options.getString('name');
-    let maxParticipants = interaction.options.getInteger('max_participants') || 8;
-    if (maxParticipants > 200) maxParticipants = 200;
+    const subCommand = interaction.options.getSubcommand();
 
-    const embed = new EmbedBuilder()
-      .setTitle(`${name} Tournament`)
-      .setDescription(`Tournament created with a max of **${maxParticipants}** participants.`)
-      .setColor(0x00AE86)
-      .setTimestamp();
+    if (subCommand === 'add') {
+      const user = interaction.options.getUser('user');
 
-    // Store tournament data in your database here
+      // Add user to the roster (e.g., save to a database or list)
+      await addUserToRoster(interaction.guild.id, user.id); // Implement this function
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-  }
-};
+      const embed = new EmbedBuilder()
+        .setTitle('Member Added to Roster')
+        .setDescription(`${user.username} has been added to the roster!`)
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    if (subCommand === 'remove') {
+      const user = interaction.options.getUser('user');
+
+      // Remove user from the roster
+      await removeUserFromRoster(interaction.guild.id, user.id); // Implement this function
+
+      const embed = new EmbedBuilder()
+        .setTitle('Member Removed from Roster')
+        .setDescription(`${user.username} has been removed from the roster.`)
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    if (subCommand === 'list') {
+      const roster = await getRoster(interaction.guild.id); // Implement this function
+
+      if (roster.length === 0) {
+        const embed = new EmbedBuilder()
+          .setTitle('No Members in Roster')
+         
