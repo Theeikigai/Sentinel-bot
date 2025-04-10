@@ -1,0 +1,32 @@
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('tournament')
+    .setDescription('Create a new tournament')
+    .addStringOption(option =>
+      option.setName('name')
+        .setDescription('Name of the tournament')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('max_participants')
+        .setDescription('Maximum participants (default 8, max 200)')
+        .setRequired(false))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  
+  async execute(interaction) {
+    const name = interaction.options.getString('name');
+    let maxParticipants = interaction.options.getInteger('max_participants') || 8;
+    if (maxParticipants > 200) maxParticipants = 200;
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${name} Tournament`)
+      .setDescription(`Tournament created with a max of **${maxParticipants}** participants.`)
+      .setColor(0x00AE86)
+      .setTimestamp();
+
+    // Store tournament data in your database here
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+};
