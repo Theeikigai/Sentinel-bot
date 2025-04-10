@@ -1,0 +1,26 @@
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('bracket')
+    .setDescription('Create and manage tournament brackets')
+    .addStringOption(option =>
+      option.setName('tournament')
+        .setDescription('Tournament name')
+        .setRequired(true)),
+
+  async execute(interaction) {
+    const tournamentName = interaction.options.getString('tournament');
+
+    // Generate bracket and manage tournament progress
+    const embed = new EmbedBuilder()
+      .setTitle(`${tournamentName} Tournament Bracket`)
+      .setDescription('Here is the current tournament bracket:')
+      .setColor(0x00AE86)
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    // Add logic for bracket progression and participant updates
+  }
+};
