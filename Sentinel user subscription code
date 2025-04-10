@@ -1,0 +1,59 @@
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('subscribe')
+    .setDescription('Manage user subscriptions')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('check')
+        .setDescription('Check your current subscription status'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('status')
+        .setDescription('Check the subscription status of another user')
+        .addUserOption(option => 
+          option.setName('user')
+            .setDescription('The user whose subscription status to check')
+            .setRequired(true))),
+
+  async execute(interaction) {
+    const subCommand = interaction.options.getSubcommand();
+
+    if (subCommand === 'check') {
+      // Get user subscription data from the database (mock-up)
+      const userID = interaction.user.id;
+      const subscription = await getUserSubscription(userID); // You should implement this function
+
+      const embed = new EmbedBuilder()
+        .setTitle('Subscription Status')
+        .setDescription(`Your current subscription: **${subscription.type}**`)
+        .addFields(
+          { name: 'Expiration Date', value: `${subscription.expirationDate}` },
+          { name: 'Subscription ID', value: `${subscription.id}` }
+        )
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    if (subCommand === 'status') {
+      const targetUser = interaction.options.getUser('user');
+      // Get the target user's subscription data
+      const subscription = await getUserSubscription(targetUser.id);
+
+      const embed = new EmbedBuilder()
+        .setTitle('Subscription Status')
+        .setDescription(`${targetUser.username}'s current subscription: **${subscription.type}**`)
+        .addFields(
+          { name: 'Expiration Date', value: `${subscription.expirationDate}` },
+          { name: 'Subscription ID', value: `${subscription.id}` }
+        )
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+  }
+};
