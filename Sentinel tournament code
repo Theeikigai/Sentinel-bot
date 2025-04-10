@@ -1,97 +1,39 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { setInterval } = require('node:timers'); // Node.js timer to run giveaways at intervals
-
-let giveawayActive = false;
-let participants = [];
+const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('auto_nitro_giveaway')
-    .setDescription('Start an automatic Nitro giveaway')
+    .setName('delete_tournament')
+    .setDescription('Delete the tournament and clean up associated channels and roles')
+    .addStringOption(option =>
+      option.setName('tournament_id')
+        .setDescription('The unique ID of the tournament to delete')
+        .setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    if (giveawayActive) {
-      return interaction.reply({ content: 'A Nitro giveaway is already active!', ephemeral: true });
+    const tournamentId = interaction.options.getString('tournament_id');
+    const tournament = tournaments[tournamentId];
+
+    if (!tournament) {
+      return interaction.reply({ content: `Tournament with ID ${tournamentId} not found.`, ephemeral: true });
     }
 
-    giveawayActive = true;
-    participants = []; // Reset the participants list when starting a new giveaway
+    // Call the cleanup function to delete the tournament
+    await this.deleteTournament(interaction, tournamentId);
 
-    const giveawayEmbed = new EmbedBuilder()
-      .setTitle('Automatic Nitro Giveaway Started!')
-      .setDescription('A Nitro giveaway will automatically start every 2 hours and end every hour. Stay tuned!')
-      .setColor(0xFF5733)
-      .setTimestamp();
+    return interaction.reply({ content: `Tournament with ID ${tournamentId} has been deleted and cleaned up successfully.`, ephemeral: true });
+  },
 
-    await interaction.reply({ embeds: [giveawayEmbed], ephemeral: true });
+  // Function to delete the tournament and its associated channels and roles
+  async deleteTournament(interaction, tournamentId) {
+    const tournament = tournaments[tournamentId];
+    
+    // Delete the announcement channel
+    const announcementChannel = await interaction.guild.channels.fetch(tournament.announcementChannel);
+    if (announcementChannel) await announcementChannel.delete();
 
-    // Start a new giveaway every 2 hours (7200000 milliseconds)
-    setInterval(async () => {
-      // Create a new giveaway message with a button to participate
-      const giveawayEmbed = new EmbedBuilder()
-        .setTitle('New Nitro Giveaway!')
-        .setDescription('Click the button below to participate in this Nitro giveaway. It ends in 1 hour.')
-        .setColor(0xFF5733)
-        .setTimestamp();
-
-      const participateButton = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('participate')
-          .setLabel('Join Giveaway')
-          .setStyle(ButtonStyle.Primary)
-      );
-
-      // Send the giveaway embed with the participation button
-      const giveawayMessage = await interaction.followUp({
-        embeds: [giveawayEmbed],
-        components: [participateButton]
-      });
-
-      // Listen for button interaction to add participants
-      const filter = i => i.customId === 'participate' && !participants.includes(i.user.id);
-      const collector = giveawayMessage.createMessageComponentCollector({
-        filter,
-        time: 3600000 // 1 hour to participate
-      });
-
-      collector.on('collect', async (i) => {
-        participants.push(i.user.id);
-        await i.reply({ content: 'You have been entered into the giveaway!', ephemeral: true });
-      });
-
-      // End the giveaway after 1 hour
-      setTimeout(async () => {
-        const endEmbed = new EmbedBuilder()
-          .setTitle('Nitro Giveaway Ended!')
-          .setDescription('The giveaway has ended! Thank you for participating.')
-          .setColor(0xFF5733)
-          .setTimestamp();
-
-        await interaction.followUp({ embeds: [endEmbed] });
-
-        // Pick a random winner from participants
-        if (participants.length > 0) {
-          const winnerId = participants[Math.floor(Math.random() * participants.length)];
-          const winner = await interaction.client.users.fetch(winnerId);
-
-          const winnerEmbed = new EmbedBuilder()
-            .setTitle('Congratulations! 🎉')
-            .setDescription(`You've won the Nitro giveaway! Here's your Nitro code: \n \`YOUR_NITRO_CODE\``)
-            .setColor(0x00FF00)
-            .setTimestamp();
-
-          // DM the winner with their Nitro code (replace with actual Nitro code logic)
-          await winner.send({ embeds: [winnerEmbed] });
-
-          // Notify the channel about the winner
-          await interaction.followUp({ content: `${winner.username} has won the Nitro giveaway! 🎉` });
-        } else {
-          await interaction.followUp({ content: 'No participants, no winner. 😢' });
-        }
-
-        giveawayActive = false; // Reset the giveaway status for the next round
-      }, 3600000); // End giveaway in 1 hour
-    }, 7200000); // Start giveaway every 2 hours
-  }
-};
+    // Delete all match threads
+    for (const threadId of tournament.threads) {
+      const thread = await interaction.guild.channels.fetch(threadId);
+      if (thread) await thread.delete();
+    }
