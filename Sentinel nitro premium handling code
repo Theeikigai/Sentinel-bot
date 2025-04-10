@@ -1,0 +1,42 @@
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('nitro')
+    .setDescription('Handle Nitro premium codes for bot access')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('submit')
+        .setDescription('Submit a Nitro code to verify and activate features')
+        .addStringOption(option =>
+          option.setName('code')
+            .setDescription('The Nitro code to submit')
+            .setRequired(true))),
+
+  async execute(interaction) {
+    const nitroCode = interaction.options.getString('code');
+    const userID = interaction.user.id;
+
+    if (!isValidNitroCode(nitroCode)) {  // Mock function for code validation
+      const embed = new EmbedBuilder()
+        .setTitle('Invalid Nitro Code')
+        .setDescription(`Uh Oh! Looks like this Nitro code is invalid. Please submit a valid Nitro code to get all bot features.`)
+        .setColor(0xFF0000)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      return;
+    }
+
+    // Code is valid, process the Nitro subscription
+    await activateNitroSubscription(userID, nitroCode);  // Implement this function to update database
+
+    const successEmbed = new EmbedBuilder()
+      .setTitle('Nitro Subscription Activated!')
+      .setDescription('Your Nitro code has been successfully verified, and all bot features are now unlocked.')
+      .setColor(0x00AE86)
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+  }
+};
