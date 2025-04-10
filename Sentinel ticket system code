@@ -1,0 +1,43 @@
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('ticket')
+    .setDescription('Manage support tickets')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('create')
+        .setDescription('Create a new support ticket'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('close')
+        .setDescription('Close an existing ticket')),
+
+  async execute(interaction) {
+    const subCommand = interaction.options.getSubcommand();
+
+    if (subCommand === 'create') {
+      const ticketEmbed = new EmbedBuilder()
+        .setTitle('Support Ticket Created!')
+        .setDescription('Our team will assist you shortly.')
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [ticketEmbed], ephemeral: true });
+
+      // Create a ticket channel and set permissions for the user
+    }
+
+    if (subCommand === 'close') {
+      const closeEmbed = new EmbedBuilder()
+        .setTitle('Ticket Closed')
+        .setDescription('Your support ticket has been closed.')
+        .setColor(0xFF0000)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [closeEmbed], ephemeral: true });
+
+      // Close the ticket channel
+    }
+  }
+};
