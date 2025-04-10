@@ -1,39 +1,116 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('delete_tournament')
-    .setDescription('Delete the tournament and clean up associated channels and roles')
+    .setName('tournament')
+    .setDescription('Create a new tournament and its structure')
     .addStringOption(option =>
-      option.setName('tournament_id')
-        .setDescription('The unique ID of the tournament to delete')
+      option.setName('name')
+        .setDescription('Name of the tournament')
         .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('max_participants')
+        .setDescription('Max participants (default 8, max 200)')
+        .setRequired(false))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    const tournamentId = interaction.options.getString('tournament_id');
-    const tournament = tournaments[tournamentId];
+    const name = interaction.options.getString('name');
+    let maxParticipants = interaction.options.getInteger('max_participants') || 8;
+    if (maxParticipants > 200) maxParticipants = 200;
 
-    if (!tournament) {
-      return interaction.reply({ content: `Tournament with ID ${tournamentId} not found.`, ephemeral: true });
-    }
+    const guild = interaction.guild;
 
-    // Call the cleanup function to delete the tournament
-    await this.deleteTournament(interaction, tournamentId);
+    // Create roles
+    const playerRole = await guild.roles.create({
+      name: `${name} Player`,
+      color: 'Green',
+      reason: 'Tournament player role',
+    });
 
-    return interaction.reply({ content: `Tournament with ID ${tournamentId} has been deleted and cleaned up successfully.`, ephemeral: true });
-  },
+    const spectatorRole = await guild.roles.create({
+      name: `${name} Spectator`,
+      color: 'Blue',
+      reason: 'Tournament spectator role',
+    });
 
-  // Function to delete the tournament and its associated channels and roles
-  async deleteTournament(interaction, tournamentId) {
-    const tournament = tournaments[tournamentId];
-    
-    // Delete the announcement channel
-    const announcementChannel = await interaction.guild.channels.fetch(tournament.announcementChannel);
-    if (announcementChannel) await announcementChannel.delete();
+    const adminRole = await guild.roles.create({
+      name: `${name} Tournament Admin`,
+      color: 'Red',
+      reason: 'Tournament admin role',
+    });
 
-    // Delete all match threads
-    for (const threadId of tournament.threads) {
-      const thread = await interaction.guild.channels.fetch(threadId);
-      if (thread) await thread.delete();
-    }
+    // Create channels category
+    const category = await guild.channels.create({
+      name: `${name} Tournament`,
+      type: ChannelType.GuildCategory,
+    });
+
+    // Create tournament-specific channels
+    const playerChannel = await guild.channels.create({
+      name: 'player-chat',
+      type: ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: [
+        {
+          id: guild.roles.everyone.id,
+          deny: ['ViewChannel'],
+        },
+        {
+          id: playerRole.id,
+          allow: ['ViewChannel', 'SendMessages'],
+        },
+        {
+          id: adminRole.id,
+          allow: ['ViewChannel', 'SendMessages'],
+        },
+      ],
+    });
+
+    const spectatorChannel = await guild.channels.create({
+      name: 'spectator-lounge',
+      type: ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: [
+        {
+          id: guild.roles.everyone.id,
+          deny: ['ViewChannel'],
+        },
+        {
+          id: spectatorRole.id,
+          allow: ['ViewChannel', 'SendMessages'],
+        },
+        {
+          id: adminRole.id,
+          allow: ['ViewChannel', 'SendMessages'],
+        },
+      ],
+    });
+
+    const adminChannel = await guild.channels.create({
+      name: 'tournament-admin',
+      type: ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: [
+        {
+          id: guild.roles.everyone.id,
+          deny: ['ViewChannel'],
+        },
+        {
+          id: adminRole.id,
+          allow: ['ViewChannel', 'SendMessages'],
+        },
+      ],
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${name} Tournament Created`)
+      .setDescription(`**Max Participants:** ${maxParticipants}\nRoles and channels have been created.`)
+      .setColor(0x00AE86)
+      .setTimestamp();
+
+    // Optional: Save tournament data to your DB here
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+};
