@@ -1,0 +1,35 @@
+const { Client, GatewayIntentBits } = require('discord.js');
+
+const client = new Client({ 
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
+
+client.on('messageCreate', async (message) => {
+  // Ignore the bot's own messages
+  if (message.author.bot) return;
+
+  // Regex to detect links (URLs)
+  const linkRegex = /https?:\/\/[^\s]+/;
+
+  if (linkRegex.test(message.content)) {
+    // Check if the user has permission to send links
+    if (message.member.permissions.has('MANAGE_MESSAGES')) {
+      return; // Allow users with specific permission to send links
+    }
+
+    // Delete the message with the link
+    await message.delete();
+
+    // Send a warning message
+    await message.channel.send(`${message.author}, you are not allowed to send links here.`);
+
+    // Optionally, apply a timeout or ban if needed
+    // await message.member.timeout(300000); // Timeout for 5 minutes
+  }
+});
+
+client.login('your-bot-token');
