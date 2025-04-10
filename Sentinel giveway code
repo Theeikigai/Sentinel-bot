@@ -1,0 +1,55 @@
+const { SlashCommandBuilder, EmbedBuilder, ButtonBuilder, ActionRowBuilder } = require('discord.js');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('gauto')
+    .setDescription('Automated Giveaway Commands')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('start')
+        .setDescription('Start an automated giveaway'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('stop')
+        .setDescription('Stop an automated giveaway')),
+
+  async execute(interaction) {
+    if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+      return interaction.reply({ content: 'You need administrator permissions to use this command!', ephemeral: true });
+    }
+
+    const subCommand = interaction.options.getSubcommand();
+
+    if (subCommand === 'start') {
+      const embed = new EmbedBuilder()
+        .setTitle('Automated Giveaway!')
+        .setDescription('React with 🎉 to enter this giveaway!')
+        .setColor(0x00AE86)
+        .setTimestamp();
+
+      const row = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('enter_giveaway')
+            .setLabel('Enter Giveaway')
+            .setStyle('PRIMARY')
+        );
+
+      await interaction.reply({
+        embeds: [embed],
+        components: [row]
+      });
+
+      setTimeout(() => {
+        interaction.editReply({
+          content: 'Giveaway ended!',
+          components: []
+        });
+      }, 3600000); // Ends in 1 hour
+    }
+
+    if (subCommand === 'stop') {
+      await interaction.reply({ content: 'Automated giveaway has been stopped.', ephemeral: true });
+    }
+  }
+};
