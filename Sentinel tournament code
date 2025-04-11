@@ -1,116 +1,85 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  PermissionFlagsBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
+
+const supportServerTournamentChannelId = 'YOUR_SUPPORT_TOURNAMENT_CHANNEL_ID'; // Replace this
+const supportServerInvite = 'https://discord.gg/YOUR_SUPPORT_INVITE'; // Replace this
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('tournament')
-    .setDescription('Create a new tournament and its structure')
+    .setDescription('Create a new tournament')
     .addStringOption(option =>
       option.setName('name')
         .setDescription('Name of the tournament')
         .setRequired(true))
     .addIntegerOption(option =>
       option.setName('max_participants')
-        .setDescription('Max participants (default 8, max 200)')
+        .setDescription('Maximum participants (default 8, max 200)')
         .setRequired(false))
+    .addStringOption(option =>
+      option.setName('invite')
+        .setDescription('Your server invite (optional for support server post)')
+        .setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     const name = interaction.options.getString('name');
+    const invite = interaction.options.getString('invite');
     let maxParticipants = interaction.options.getInteger('max_participants') || 8;
     if (maxParticipants > 200) maxParticipants = 200;
 
-    const guild = interaction.guild;
-
-    // Create roles
-    const playerRole = await guild.roles.create({
-      name: `${name} Player`,
-      color: 'Green',
-      reason: 'Tournament player role',
-    });
-
-    const spectatorRole = await guild.roles.create({
-      name: `${name} Spectator`,
-      color: 'Blue',
-      reason: 'Tournament spectator role',
-    });
-
-    const adminRole = await guild.roles.create({
-      name: `${name} Tournament Admin`,
-      color: 'Red',
-      reason: 'Tournament admin role',
-    });
-
-    // Create channels category
-    const category = await guild.channels.create({
-      name: `${name} Tournament`,
-      type: ChannelType.GuildCategory,
-    });
-
-    // Create tournament-specific channels
-    const playerChannel = await guild.channels.create({
-      name: 'player-chat',
-      type: ChannelType.GuildText,
-      parent: category.id,
-      permissionOverwrites: [
-        {
-          id: guild.roles.everyone.id,
-          deny: ['ViewChannel'],
-        },
-        {
-          id: playerRole.id,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-        {
-          id: adminRole.id,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-      ],
-    });
-
-    const spectatorChannel = await guild.channels.create({
-      name: 'spectator-lounge',
-      type: ChannelType.GuildText,
-      parent: category.id,
-      permissionOverwrites: [
-        {
-          id: guild.roles.everyone.id,
-          deny: ['ViewChannel'],
-        },
-        {
-          id: spectatorRole.id,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-        {
-          id: adminRole.id,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-      ],
-    });
-
-    const adminChannel = await guild.channels.create({
-      name: 'tournament-admin',
-      type: ChannelType.GuildText,
-      parent: category.id,
-      permissionOverwrites: [
-        {
-          id: guild.roles.everyone.id,
-          deny: ['ViewChannel'],
-        },
-        {
-          id: adminRole.id,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-      ],
-    });
-
-    const embed = new EmbedBuilder()
-      .setTitle(`${name} Tournament Created`)
-      .setDescription(`**Max Participants:** ${maxParticipants}\nRoles and channels have been created.`)
+    const tournamentEmbed = new EmbedBuilder()
+      .setTitle(`${name} Tournament`)
+      .setDescription(`Tournament created with a max of **${maxParticipants}** participants.`)
       .setColor(0x00AE86)
       .setTimestamp();
 
-    // Optional: Save tournament data to your DB here
+    const postPromptEmbed = new EmbedBuilder()
+      .setTitle('Post to Sentinel Support Server?')
+      .setDescription('Would you like to post this tournament to the support server for more visibility?')
+      .setColor(0xF1C40F);
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('post_tournament_yes')
+        .setLabel('Yes')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('post_tournament_no')
+        .setLabel('No')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await interaction.reply({ embeds: [tournamentEmbed, postPromptEmbed], components: [row], ephemeral: true });
+
+    const collector = interaction.channel.createMessageComponentCollector({ time: 15000 });
+
+    collector.on('collect', async i => {
+      if (i.user.id !== interaction.user.id) return;
+
+      if (i.customId === 'post_tournament_yes') {
+        const supportEmbed = new EmbedBuilder()
+          .setTitle(`${name} Tournament`)
+          .setDescription(`**Max Participants:** ${maxParticipants}\n**Hosted by:** <@${interaction.user.id}>\n\n[Join the Tournament Server](${invite})`)
+          .setColor(0x00AE86)
+          .setTimestamp();
+
+        const supportChannel = interaction.client.channels.cache.get(supportServerTournamentChannelId);
+        if (supportChannel) {
+          await supportChannel.send({ embeds: [supportEmbed] });
+          await i.reply({ content: 'Tournament successfully posted to the support server!', ephemeral: true });
+        } else {
+          await i.reply({ content: 'Failed to find the support server channel.', ephemeral: true });
+        }
+      } else if (i.customId === 'post_tournament_no') {
+        await i.reply({ content: 'No worries! It won’t be posted anywhere else.', ephemeral: true });
+      }
+    });
   }
 };
