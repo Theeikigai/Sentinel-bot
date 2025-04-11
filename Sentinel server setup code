@@ -1,50 +1,58 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('setup')
-    .setDescription('Setup the server with the bot features')
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('all')
-        .setDescription('Setup the server with all features'))
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('custom')
-        .setDescription('Setup the server with custom features')
-        .addStringOption(option =>
-          option.setName('features')
-            .setDescription('Select features to setup')
-            .setRequired(true))),
+    .setName('server')
+    .setDescription('Full server setup with roles, channels, tickets, and permissions')
+    .addSubcommand(sub =>
+      sub.setName('setup')
+        .setDescription('Start the complete server setup')
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    const subCommand = interaction.options.getSubcommand();
+    const guild = interaction.guild;
+    const owner = await guild.fetchOwner();
 
-    if (subCommand === 'all') {
-      const embed = new EmbedBuilder()
-        .setTitle('Server Setup')
-        .setDescription('Setting up all features in your server...')
-        .setColor(0x00AE86)
-        .setTimestamp();
+    await interaction.reply({ content: 'Setting up your server...', ephemeral: true });
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+    // === Create Roles ===
+    const roleNames = [
+      'Staff', 'Moderator', 'Head Moderator', 'Head Admin',
+      'Admin', 'Partnership Manager', 'Trial Mod'
+    ];
+    const createdRoles = {};
 
-      // Call function to setup everything for the server
-      await setupAllServerFeatures(interaction.guild.id);  // Implement this function for server setup
+    for (const name of roleNames) {
+      const role = await guild.roles.create({ name });
+      createdRoles[name] = role;
     }
 
-    if (subCommand === 'custom') {
-      const features = interaction.options.getString('features').split(',');
-      const embed = new EmbedBuilder()
-        .setTitle('Custom Server Setup')
-        .setDescription(`Setting up the following features: ${features.join(', ')}`)
-        .setColor(0x00AE86)
-        .setTimestamp();
+    // === Create Categories and Channels ===
+    const categories = {
+      'Support': ['tickets'],
+      'Main': ['announcements', 'food', 'levels'],
+      'Giveaways': ['giveaway', 'nitro-giveaway'],
+      'Tournaments': ['post-your-tournaments'],
+      'Logs': ['transcript']
+    };
 
-      await interaction.reply({ embeds: [embed], ephemeral: true });
+    for (const [categoryName, channels] of Object.entries(categories)) {
+      const category = await guild.channels.create({
+        name: categoryName,
+        type: ChannelType.GuildCategory,
+      });
 
-      // Call function to setup custom features for the server
-      await setupCustomServerFeatures(interaction.guild.id, features);  // Implement this function
+      for (const channelName of channels) {
+        await guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent: category,
+        });
+      }
     }
+
+    // === Setup Complete ===
+    await interaction.followUp({ content: 'Server setup complete!', ephemeral: true });
   }
 };
