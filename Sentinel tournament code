@@ -1,14 +1,11 @@
-const {
-  SlashCommandBuilder,
-  EmbedBuilder,
-  PermissionFlagsBits,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { MongoClient } = require('mongodb'); // Ensure you have MongoDB client installed
 
-const supportServerTournamentChannelId = 'YOUR_SUPPORT_TOURNAMENT_CHANNEL_ID'; // Replace this
-const supportServerInvite = 'https://discord.gg/YOUR_SUPPORT_INVITE'; // Replace this
+// MongoDB connection
+const client = new MongoClient('mongodb://your_mongo_connection_string');
+client.connect();
+const db = client.db('SentinelBotDB');
+const tournamentsCollection = db.collection('tournaments');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -22,64 +19,121 @@ module.exports = {
       option.setName('max_participants')
         .setDescription('Maximum participants (default 8, max 200)')
         .setRequired(false))
-    .addStringOption(option =>
-      option.setName('invite')
-        .setDescription('Your server invite (optional for support server post)')
-        .setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     const name = interaction.options.getString('name');
-    const invite = interaction.options.getString('invite');
     let maxParticipants = interaction.options.getInteger('max_participants') || 8;
     if (maxParticipants > 200) maxParticipants = 200;
 
-    const tournamentEmbed = new EmbedBuilder()
+    // Create tournament embed
+    const embed = new EmbedBuilder()
       .setTitle(`${name} Tournament`)
       .setDescription(`Tournament created with a max of **${maxParticipants}** participants.`)
       .setColor(0x00AE86)
       .setTimestamp();
 
-    const postPromptEmbed = new EmbedBuilder()
-      .setTitle('Post to Sentinel Support Server?')
-      .setDescription('Would you like to post this tournament to the support server for more visibility?')
-      .setColor(0xF1C40F);
+    // Create a tournament object to store in DB
+    const tournament = {
+      name: name,
+      maxParticipants: maxParticipants,
+      participants: [],
+      status: 'open', // Tournament is open for registration
+      createdAt: new Date(),
+    };
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('post_tournament_yes')
-        .setLabel('Yes')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('post_tournament_no')
-        .setLabel('No')
-        .setStyle(ButtonStyle.Danger)
-    );
+    // Save the tournament in MongoDB
+    await tournamentsCollection.insertOne(tournament);
 
-    await interaction.reply({ embeds: [tournamentEmbed, postPromptEmbed], components: [row], ephemeral: true });
+    // Ask user if they want to post it in the support server
+    const confirmEmbed = new EmbedBuilder()
+      .setTitle('Post this tournament in the Support Server?')
+      .setDescription('Do you want to share this tournament in the Sentinel Support Server for others to join?')
+      .setColor(0x00AE86);
 
-    const collector = interaction.channel.createMessageComponentCollector({ time: 15000 });
+    const postButtons = [
+      {
+        label: 'Yes',
+        customId: 'post_yes',
+        style: 'SUCCESS',
+      },
+      {
+        label: 'No',
+        customId: 'post_no',
+        style: 'DANGER',
+      },
+    ];
+
+    const row = {
+      type: 1,
+      components: postButtons.map(button => ({
+        type: 2,
+        style: button.style,
+        label: button.label,
+        custom_id: button.customId,
+      })),
+    };
+
+    const confirmationMessage = await interaction.reply({ embeds: [confirmEmbed], components: [row], ephemeral: true });
+
+    const filter = i => i.user.id === interaction.user.id;
+    const collector = confirmationMessage.createMessageComponentCollector({ filter, time: 15000 });
 
     collector.on('collect', async i => {
-      if (i.user.id !== interaction.user.id) return;
-
-      if (i.customId === 'post_tournament_yes') {
+      if (i.customId === 'post_yes') {
+        // Post to the support server
+        const supportServerChannel = interaction.client.channels.cache.get('your_support_server_channel_id');
         const supportEmbed = new EmbedBuilder()
           .setTitle(`${name} Tournament`)
-          .setDescription(`**Max Participants:** ${maxParticipants}\n**Hosted by:** <@${interaction.user.id}>\n\n[Join the Tournament Server](${invite})`)
+          .setDescription(`Tournament hosted by ${interaction.user.tag}.\nMax Participants: **${maxParticipants}**`)
+          .addField('Join the tournament', `Join the tournament by using the registration button below.`)
           .setColor(0x00AE86)
           .setTimestamp();
 
-        const supportChannel = interaction.client.channels.cache.get(supportServerTournamentChannelId);
-        if (supportChannel) {
-          await supportChannel.send({ embeds: [supportEmbed] });
-          await i.reply({ content: 'Tournament successfully posted to the support server!', ephemeral: true });
-        } else {
-          await i.reply({ content: 'Failed to find the support server channel.', ephemeral: true });
-        }
-      } else if (i.customId === 'post_tournament_no') {
-        await i.reply({ content: 'No worries! It won’t be posted anywhere else.', ephemeral: true });
+        await supportServerChannel.send({ embeds: [supportEmbed] });
+        await i.reply({ content: 'Tournament posted in the support server!', ephemeral: true });
+      } else {
+        await i.reply({ content: 'Tournament creation aborted.', ephemeral: true });
       }
     });
-  }
+  },
+
+  // Button Interaction (for tournament registration)
+  async registerParticipant(interaction, tournamentId) {
+    const tournament = await tournamentsCollection.findOne({ _id: tournamentId });
+    if (!tournament || tournament.status !== 'open') {
+      return interaction.reply({ content: 'This tournament is not open for registration.', ephemeral: true });
+    }
+
+    if (tournament.participants.length >= tournament.maxParticipants) {
+      return interaction.reply({ content: 'This tournament has reached the maximum number of participants.', ephemeral: true });
+    }
+
+    // Add participant
+    tournament.participants.push(interaction.user.id);
+    await tournamentsCollection.updateOne({ _id: tournamentId }, { $set: { participants: tournament.participants } });
+
+    return interaction.reply({ content: `You have successfully registered for the ${tournament.name} tournament!`, ephemeral: true });
+  },
+
+  // Automatically clean up tournament channels and threads when done
+  async cleanupTournament(tournamentId) {
+    const tournament = await tournamentsCollection.findOne({ _id: tournamentId });
+    if (!tournament) return;
+
+    // Clean up tournament-related channels
+    const tournamentChannel = interaction.guild.channels.cache.find(c => c.name === `${tournament.name}-tournament`);
+    if (tournamentChannel) {
+      await tournamentChannel.delete();
+    }
+
+    // Clean up tournament thread
+    const tournamentThread = interaction.guild.threads.cache.find(t => t.name === `${tournament.name}-discussion`);
+    if (tournamentThread) {
+      await tournamentThread.delete();
+    }
+
+    // Update tournament status to 'closed'
+    await tournamentsCollection.updateOne({ _id: tournamentId }, { $set: { status: 'closed' } });
+  },
 };
