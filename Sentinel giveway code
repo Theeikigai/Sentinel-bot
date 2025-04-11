@@ -1,55 +1,203 @@
-const { SlashCommandBuilder, EmbedBuilder, ButtonBuilder, ActionRowBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ButtonBuilder, ActionRowBuilder, PermissionFlagsBits } = require('discord.js');
+const { MongoClient } = require('mongodb');
+
+// MongoDB connection
+const client = new MongoClient('mongodb://your_mongo_connection_string');
+client.connect();
+const db = client.db('SentinelBotDB');
+const giveawaysCollection = db.collection('giveaways');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('gauto')
-    .setDescription('Automated Giveaway Commands')
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('start')
-        .setDescription('Start an automated giveaway'))
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('stop')
-        .setDescription('Stop an automated giveaway')),
+    .setName('giveaway')
+    .setDescription('Create a giveaway')
+    .addStringOption(option =>
+      option.setName('prize')
+        .setDescription('The prize of the giveaway')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('duration')
+        .setDescription('Duration of the giveaway in minutes (default 60, max 1440)')
+        .setRequired(false))
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),  // Ensures only admins can run this command
 
   async execute(interaction) {
-    if (!interaction.member.permissions.has('ADMINISTRATOR')) {
-      return interaction.reply({ content: 'You need administrator permissions to use this command!', ephemeral: true });
+    // Ensure the user is the server owner or has admin role
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'You need to be an admin to use this command.', ephemeral: true });
     }
 
-    const subCommand = interaction.options.getSubcommand();
+    const prize = interaction.options.getString('prize');
+    let duration = interaction.options.getInteger('duration') || 60;
+    if (duration > 1440) duration = 1440; // Max duration is 1440 minutes (1 day)
 
-    if (subCommand === 'start') {
-      const embed = new EmbedBuilder()
-        .setTitle('Automated Giveaway!')
-        .setDescription('React with 🎉 to enter this giveaway!')
-        .setColor(0x00AE86)
-        .setTimestamp();
+    // Create giveaway embed
+    const embed = new EmbedBuilder()
+      .setTitle('🎉 Giveaway!')
+      .setDescription(`Prize: **${prize}**\nReact with 🎉 to enter!`)
+      .setColor(0xFF5733)
+      .setTimestamp()
+      .addFields(
+        { name: 'Duration', value: `${duration} minutes` },
+        { name: 'To Enter', value: 'React with 🎉 to participate!' }
+      );
 
-      const row = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId('enter_giveaway')
-            .setLabel('Enter Giveaway')
-            .setStyle('PRIMARY')
-        );
+    // Create giveaway entry button
+    const enterButton = new ButtonBuilder()
+      .setCustomId('enter_giveaway')
+      .setLabel('Enter Giveaway')
+      .setStyle('PRIMARY');
 
-      await interaction.reply({
-        embeds: [embed],
-        components: [row]
+    const row = new ActionRowBuilder()
+      .addComponents(enterButton);
+
+    // Save giveaway data in MongoDB
+    const giveaway = {
+      prize: prize,
+      duration: duration,
+      endTime: new Date().getTime() + duration * 60000, // Convert duration to milliseconds
+      participants: [],
+      status: 'active',
+    };
+
+    await giveawaysCollection.insertOne(giveaway);
+
+    // Send giveaway message
+    await interaction.reply({
+      embeds: [embed],
+      components: [row],
+    });
+
+    // Automatically end the giveaway after the duration
+    setTimeout(async () => {
+      const updatedGiveaway = await giveawaysCollection.findOne({ prize });
+      if (!updatedGiveaway || updatedGiveaway.status !== 'active') return;
+
+      // Select a winner from participants
+      const winner = updatedGiveaway.participants[Math.floor(Math.random() * updatedGiveaway.participants.length)];
+      if (!winner) {
+        return interaction.followUp({ content: 'No participants, giveaway cancelled.', ephemeral: true });
+      }
+
+      // Send a message to the winner
+      const winnerUser = await interaction.guild.members.fetch(winner);
+      await winnerUser.send(`Congratulations! You've won the **${prize}** in the giveaway! 🎉`);
+
+      // Mark giveaway as completed
+      await giveawaysCollection.updateOne(
+        { prize },
+        { $set: { status: 'completed' } }
+      );
+
+      // Notify in the original giveaway message
+      const giveawayChannel = interaction.channel;
+      const giveawayMessage = await giveawayChannel.messages.fetch(interaction.message.id);
+      await giveawayMessage.edit({
+        embeds: [embed.setDescription(`🎉 Giveaway Finished!\nWinner: <@${winner}>`)],
+        components: [],
       });
+    }, duration * 60000); // Convert to milliseconds
 
-      setTimeout(() => {
-        interaction.editReply({
-          content: 'Giveaway ended!',
-          components: []
-        });
-      }, 3600000); // Ends in 1 hour
+    interaction.followUp({ content: `Giveaway for **${prize}** has been created! Duration: **${duration} minutes**`, ephemeral: true });
+  },
+
+  // Button Interaction for entering the giveaway
+  async enterGiveaway(interaction) {
+    const giveaway = await giveawaysCollection.findOne({ status: 'active' });
+    if (!giveaway) {
+      return interaction.reply({ content: 'There is no active giveaway at the moment.', ephemeral: true });
     }
 
-    if (subCommand === 'stop') {
-      await interaction.reply({ content: 'Automated giveaway has been stopped.', ephemeral: true });
+    if (giveaway.participants.includes(interaction.user.id)) {
+      return interaction.reply({ content: 'You are already entered in this giveaway.', ephemeral: true });
     }
+
+    giveaway.participants.push(interaction.user.id);
+    await giveawaysCollection.updateOne(
+      { _id: giveaway._id },
+      { $set: { participants: giveaway.participants } }
+    );
+
+    return interaction.reply({ content: `You've successfully entered the giveaway for **${giveaway.prize}**!`, ephemeral: true });
+  },
+
+  // /g auto command
+  async autoGiveaway(interaction) {
+    // Ensure only admin can use /g auto
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: 'You need to be an admin to use this command.', ephemeral: true });
+    }
+
+    const prize = 'Custom Prize';  // Can customize to use dynamic prize input
+    const duration = 60;  // Default duration: 60 minutes
+
+    // Create giveaway embed
+    const embed = new EmbedBuilder()
+      .setTitle('🎉 Auto Giveaway!')
+      .setDescription(`Prize: **${prize}**\nReact with 🎉 to enter!`)
+      .setColor(0xFF5733)
+      .setTimestamp()
+      .addFields(
+        { name: 'Duration', value: `${duration} minutes` },
+        { name: 'To Enter', value: 'React with 🎉 to participate!' }
+      );
+
+    // Create giveaway entry button
+    const enterButton = new ButtonBuilder()
+      .setCustomId('enter_giveaway')
+      .setLabel('Enter Giveaway')
+      .setStyle('PRIMARY');
+
+    const row = new ActionRowBuilder()
+      .addComponents(enterButton);
+
+    // Save giveaway data in MongoDB
+    const giveaway = {
+      prize: prize,
+      duration: duration,
+      endTime: new Date().getTime() + duration * 60000, // Convert duration to milliseconds
+      participants: [],
+      status: 'active',
+    };
+
+    await giveawaysCollection.insertOne(giveaway);
+
+    // Send giveaway message
+    await interaction.reply({
+      embeds: [embed],
+      components: [row],
+    });
+
+    // Automatically end the giveaway after the duration
+    setTimeout(async () => {
+      const updatedGiveaway = await giveawaysCollection.findOne({ prize });
+      if (!updatedGiveaway || updatedGiveaway.status !== 'active') return;
+
+      // Select a winner from participants
+      const winner = updatedGiveaway.participants[Math.floor(Math.random() * updatedGiveaway.participants.length)];
+      if (!winner) {
+        return interaction.followUp({ content: 'No participants, giveaway cancelled.', ephemeral: true });
+      }
+
+      // Send a message to the winner
+      const winnerUser = await interaction.guild.members.fetch(winner);
+      await winnerUser.send(`Congratulations! You've won the **${prize}** in the giveaway! 🎉`);
+
+      // Mark giveaway as completed
+      await giveawaysCollection.updateOne(
+        { prize },
+        { $set: { status: 'completed' } }
+      );
+
+      // Notify in the original giveaway message
+      const giveawayChannel = interaction.channel;
+      const giveawayMessage = await giveawayChannel.messages.fetch(interaction.message.id);
+      await giveawayMessage.edit({
+        embeds: [embed.setDescription(`🎉 Giveaway Finished!\nWinner: <@${winner}>`)],
+        components: [],
+      });
+    }, duration * 60000); // Convert to milliseconds
+
+    interaction.followUp({ content: `Auto Giveaway for **${prize}** has been created! Duration: **${duration} minutes**`, ephemeral: true });
   }
 };
