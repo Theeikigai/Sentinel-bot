@@ -1,0 +1,129 @@
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder } = require('discord.js');
+const mongoose = require('mongoose');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('setup')
+    .setDescription('Set up your server with roles, channels, and features')
+    .addStringOption(option =>
+      option.setName('type')
+        .setDescription('Choose the setup type')
+        .addChoices(
+          { name: 'all', value: 'all' },
+          { name: 'custom', value: 'custom' }
+        )
+        .setRequired(true)),
+
+  async execute(interaction) {
+    const setupType = interaction.options.getString('type');
+    const guild = interaction.guild;
+
+    if (setupType === 'all') {
+      // Setup full server
+      const channels = [
+        'announcements',
+        'food',
+        'levels',
+        'support',
+        'tickets'
+      ];
+
+      // Create channels
+      for (const channelName of channels) {
+        await guild.channels.create({
+          name: channelName,
+          type: 'GUILD_TEXT',
+          topic: `${channelName.charAt(0).toUpperCase() + channelName.slice(1)} channel for general discussions.`,
+          permissionOverwrites: [
+            {
+              id: guild.roles.everyone,
+              deny: ['VIEW_CHANNEL'],
+            },
+          ],
+        });
+      }
+
+      // Create roles
+      const roles = [
+        { name: 'Staff', permissions: [PermissionFlagsBits.ManageRoles, PermissionFlagsBits.KickMembers] },
+        { name: 'Moderator', permissions: [PermissionFlagsBits.ManageMessages] },
+        { name: 'Admin', permissions: [PermissionFlagsBits.Administrator] },
+        { name: 'User', permissions: [] },
+      ];
+
+      for (const role of roles) {
+        await guild.roles.create({
+          name: role.name,
+          permissions: role.permissions,
+        });
+      }
+
+      // Create Staff Permissions for the Ticket System
+      const supportChannel = await guild.channels.create({
+        name: 'support',
+        type: 'GUILD_TEXT',
+        topic: 'For all your server support needs.',
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone,
+            deny: ['VIEW_CHANNEL'], // Preventing everyone from viewing the support channel.
+          },
+          {
+            id: guild.roles.cache.find(role => role.name === 'Staff'),
+            allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'], // Staff can view and send messages.
+          },
+        ],
+      });
+
+      // Add Buttons to Reply Message
+      const row = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('enter_ticket')
+            .setLabel('Open Support Ticket')
+            .setStyle('PRIMARY')
+        );
+
+      await interaction.reply({
+        content: 'Your server is set up with roles and channels.',
+        components: [row],
+      });
+
+      // Button Interaction for Ticket
+      client.on('interactionCreate', async (interaction) => {
+        if (!interaction.isButton()) return;
+
+        if (interaction.customId === 'enter_ticket') {
+          const ticketChannel = await guild.channels.create({
+            name: `ticket-${interaction.user.username}`,
+            type: 'GUILD_TEXT',
+            topic: `Support ticket for ${interaction.user.username}`,
+            permissionOverwrites: [
+              {
+                id: guild.roles.everyone,
+                deny: ['VIEW_CHANNEL'],
+              },
+              {
+                id: interaction.user.id,
+                allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
+              },
+              {
+                id: guild.roles.cache.find(role => role.name === 'Staff'),
+                allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
+              },
+            ],
+          });
+
+          await interaction.reply({
+            content: `A new ticket has been created! Please follow the instructions in ${ticketChannel}`,
+            ephemeral: true,
+          });
+        }
+      });
+
+    } else if (setupType === 'custom') {
+      // Custom setup (ask user for specific roles or channels)
+      await interaction.reply({ content: 'Please use the custom setup option with more specific instructions.' });
+    }
+  },
+};
