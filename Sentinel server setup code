@@ -1,58 +1,100 @@
-const { SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('server')
-    .setDescription('Full server setup with roles, channels, tickets, and permissions')
-    .addSubcommand(sub =>
-      sub.setName('setup')
-        .setDescription('Start the complete server setup')
-    )
+    .setName('setup')
+    .setDescription('Set up the server with all necessary channels and roles.')
+    .addStringOption(option =>
+      option.setName('type')
+        .setDescription('Choose setup type: all or basic')
+        .setRequired(true)
+        .addChoices(
+          { name: 'All', value: 'all' },
+          { name: 'Basic', value: 'basic' },
+        ))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
+  
   async execute(interaction) {
-    const guild = interaction.guild;
-    const owner = await guild.fetchOwner();
+    const type = interaction.options.getString('type');
+    const serverOwner = interaction.guild.ownerId;
 
-    await interaction.reply({ content: 'Setting up your server...', ephemeral: true });
-
-    // === Create Roles ===
-    const roleNames = [
-      'Staff', 'Moderator', 'Head Moderator', 'Head Admin',
-      'Admin', 'Partnership Manager', 'Trial Mod'
-    ];
-    const createdRoles = {};
-
-    for (const name of roleNames) {
-      const role = await guild.roles.create({ name });
-      createdRoles[name] = role;
+    if (interaction.user.id !== serverOwner) {
+      return interaction.reply({ content: 'You must be the server owner to run this command.', ephemeral: true });
     }
 
-    // === Create Categories and Channels ===
-    const categories = {
-      'Support': ['tickets'],
-      'Main': ['announcements', 'food', 'levels'],
-      'Giveaways': ['giveaway', 'nitro-giveaway'],
-      'Tournaments': ['post-your-tournaments'],
-      'Logs': ['transcript']
-    };
+    // Role creation
+    const roles = [
+      { name: 'Staff', permissions: [] },
+      { name: 'Moderator', permissions: ['Kick', 'Ban'] },
+      { name: 'Head Moderator', permissions: ['Kick', 'Ban', 'Manage Channels'] },
+      { name: 'Head Admin', permissions: ['Kick', 'Ban', 'Manage Server', 'Manage Channels', 'Manage Roles'] },
+      { name: 'Admin', permissions: ['Kick', 'Ban', 'Manage Server'] },
+      { name: 'Partnership Manager', permissions: [] },
+      { name: 'Regular Staff', permissions: [] },
+    ];
 
-    for (const [categoryName, channels] of Object.entries(categories)) {
-      const category = await guild.channels.create({
-        name: categoryName,
-        type: ChannelType.GuildCategory,
-      });
+    if (type === 'all') {
+      // Channel creation for 'all' setup
+      const categories = ['Support', 'Tickets', 'General'];
+      const channels = [
+        { name: 'announcements', type: 'GUILD_TEXT' },
+        { name: 'food', type: 'GUILD_TEXT' },
+        { name: 'levels', type: 'GUILD_TEXT' },
+        { name: 'support', type: 'GUILD_CATEGORY', channels: ['ticket'] },
+        { name: 'tickets', type: 'GUILD_CATEGORY', channels: ['ticket'] },
+      ];
 
-      for (const channelName of channels) {
-        await guild.channels.create({
-          name: channelName,
-          type: ChannelType.GuildText,
-          parent: category,
+      // Create roles
+      for (const role of roles) {
+        await interaction.guild.roles.create({
+          name: role.name,
+          permissions: role.permissions,
+          reason: `Setup by ${interaction.user.tag}`
         });
       }
-    }
 
-    // === Setup Complete ===
-    await interaction.followUp({ content: 'Server setup complete!', ephemeral: true });
+      // Create categories and channels
+      for (const category of categories) {
+        await interaction.guild.channels.create({
+          name: category,
+          type: 'GUILD_CATEGORY',
+        });
+      }
+
+      // Create individual channels
+      for (const channel of channels) {
+        if (channel.type === 'GUILD_CATEGORY') {
+          const category = await interaction.guild.channels.create({
+            name: channel.name,
+            type: channel.type,
+          });
+
+          // Create sub-channels inside categories
+          if (channel.channels) {
+            for (const subChannelName of channel.channels) {
+              await interaction.guild.channels.create({
+                name: subChannelName,
+                parent: category.id,
+                type: 'GUILD_TEXT',
+              });
+            }
+          }
+        } else {
+          await interaction.guild.channels.create({
+            name: channel.name,
+            type: channel.type,
+          });
+        }
+      }
+
+      await interaction.reply({ content: 'Server setup with all roles and channels complete.', ephemeral: true });
+    } else {
+      // Basic setup - only create essential channels
+      await interaction.guild.channels.create({ name: 'announcements', type: 'GUILD_TEXT' });
+      await interaction.guild.channels.create({ name: 'food', type: 'GUILD_TEXT' });
+      await interaction.guild.channels.create({ name: 'levels', type: 'GUILD_TEXT' });
+
+      await interaction.reply({ content: 'Server setup with basic channels complete.', ephemeral: true });
+    }
   }
 };
