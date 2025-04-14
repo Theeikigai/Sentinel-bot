@@ -1,0 +1,8 @@
+const mongoose = require('mongoose');
+
+const staffRosterSchema = new mongoose.Schema({
+  guildId: String,
+  members: [String],
+});
+
+module.exports = mongoose.model('StaffRoster', staffRosterSchema);
