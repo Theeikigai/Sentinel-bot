@@ -1,0 +1,41 @@
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const TeamRoster = require('../models/TeamRoster');
+const StaffRoster = require('../models/StaffRoster');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('roster')
+    .setDescription('Manage rosters')
+    .addSubcommand(sub => sub.setName('team').setDescription('Manage the team roster'))
+    .addSubcommand(sub => sub.setName('staff').setDescription('Manage the staff roster')),
+
+  async execute(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+    const rosterType = subcommand === 'team' ? 'Team' : 'Staff';
+
+    const dbModel = rosterType === 'Team' ? TeamRoster : StaffRoster;
+    let rosterDoc = await dbModel.findOne({ guildId: interaction.guild.id });
+
+    if (!rosterDoc) {
+      rosterDoc = new dbModel({ guildId: interaction.guild.id, members: [] });
+      await rosterDoc.save();
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${rosterType} Roster`)
+      .setDescription(
+        rosterDoc.members.length > 0
+          ? rosterDoc.members.map((id, i) => `**${i + 1}.** <@${id}>`).join('\n')
+          : '*No members in the roster yet.*'
+      )
+      .setColor(0x3498db);
+
+    const buttons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`add_${rosterType.toLowerCase()}`).setLabel('Add').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`remove_${rosterType.toLowerCase()}`).setLabel('Remove').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`refresh_${rosterType.toLowerCase()}`).setLabel('Refresh').setStyle(ButtonStyle.Primary)
+    );
+
+    await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: true });
+  }
+};
