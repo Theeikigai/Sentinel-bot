@@ -1,66 +1,50 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
-
-const teamRoster = [];
-
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('roster')
-    .setDescription('Manage rosters')
-    .addSubcommand(sub => sub.setName('team').setDescription('Manage the team roster'))
-    .addSubcommand(sub => sub.setName('staff').setDescription('Manage the staff roster')),
-
-  async execute(interaction) {
-    const subcommand = interaction.options.getSubcommand();
-    const rosterType = subcommand === 'team' ? 'Team' : 'Staff';
-
-    const embed = new EmbedBuilder()
-      .setTitle(`${rosterType} Roster`)
-      .setDescription(
-        (rosterType === 'Team' ? teamRoster : staffRoster).length > 0
-          ? (rosterType === 'Team' ? teamRoster : staffRoster).map((user, i) => `**${i + 1}.** <@${user}>`).join('\n')
-          : '*No members in the roster yet.*'
-      )
-      .setColor(0x3498db);
-
-    const buttons = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`add_${rosterType.toLowerCase()}`).setLabel('Add').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`remove_${rosterType.toLowerCase()}`).setLabel('Remove').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`refresh_${rosterType.toLowerCase()}`).setLabel('Refresh').setStyle(ButtonStyle.Primary)
-    );
-
-    await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: true });
-  }
-};
 client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isButton()) return;
-
-  const [action, type] = interaction.customId.split('_');
-  const roster = type === 'team' ? teamRoster : staffRoster;
-
-  if (action === 'add') {
-    const user = interaction.user.id;
-    if (!roster.includes(user)) roster.push(user);
-    await interaction.reply({ content: 'You were added to the roster!', ephemeral: true });
+  if (interaction.isChatInputCommand()) {
+    // your slash command handler here
+    // like command collection stuff
   }
 
-  if (action === 'remove') {
-    const index = roster.indexOf(interaction.user.id);
-    if (index !== -1) {
-      roster.splice(index, 1);
-      await interaction.reply({ content: 'You were removed from the roster.', ephemeral: true });
-    } else {
-      await interaction.reply({ content: 'You are not on the roster.', ephemeral: true });
+  if (interaction.isButton()) {
+    const [action, type] = interaction.customId.split('_');
+    const TeamRoster = require('./models/TeamRoster');
+    const StaffRoster = require('./models/StaffRoster');
+    const dbModel = type === 'team' ? TeamRoster : StaffRoster;
+
+    let rosterDoc = await dbModel.findOne({ guildId: interaction.guild.id });
+    if (!rosterDoc) rosterDoc = new dbModel({ guildId: interaction.guild.id, members: [] });
+
+    if (action === 'add') {
+      if (!rosterDoc.members.includes(interaction.user.id)) {
+        rosterDoc.members.push(interaction.user.id);
+        await rosterDoc.save();
+        return interaction.reply({ content: 'You were added to the roster!', ephemeral: true });
+      } else {
+        return interaction.reply({ content: 'You are already on the roster.', ephemeral: true });
+      }
     }
-  }
 
-  if (action === 'refresh') {
-    const embed = new EmbedBuilder()
-      .setTitle(`${type.charAt(0).toUpperCase() + type.slice(1)} Roster`)
-      .setDescription(
-        roster.length > 0 ? roster.map((user, i) => `**${i + 1}.** <@${user}>`).join('\n') : '*No members in the roster yet.*'
-      )
-      .setColor(0x3498db);
+    if (action === 'remove') {
+      const index = rosterDoc.members.indexOf(interaction.user.id);
+      if (index !== -1) {
+        rosterDoc.members.splice(index, 1);
+        await rosterDoc.save();
+        return interaction.reply({ content: 'You were removed from the roster.', ephemeral: true });
+      } else {
+        return interaction.reply({ content: 'You are not on the roster.', ephemeral: true });
+      }
+    }
 
-    await interaction.update({ embeds: [embed] });
+    if (action === 'refresh') {
+      const embed = new EmbedBuilder()
+        .setTitle(`${type.charAt(0).toUpperCase() + type.slice(1)} Roster`)
+        .setDescription(
+          rosterDoc.members.length > 0
+            ? rosterDoc.members.map((id, i) => `**${i + 1}.** <@${id}>`).join('\n')
+            : '*No members in the roster yet.*'
+        )
+        .setColor(0x3498db);
+
+      return interaction.update({ embeds: [embed] });
+    }
   }
 });
